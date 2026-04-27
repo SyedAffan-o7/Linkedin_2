@@ -3,10 +3,8 @@
 CREATE TABLE IF NOT EXISTS profiles (
   id SERIAL PRIMARY KEY,
   user_id INTEGER UNIQUE,
-  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL,
   password VARCHAR(255) NOT NULL,
-  first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
   headline TEXT DEFAULT '',
   bio TEXT DEFAULT '',
   location VARCHAR(255) DEFAULT '',
@@ -27,6 +25,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 CREATE TABLE IF NOT EXISTS posts (
   id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES profiles(id),
   author VARCHAR(255) NOT NULL,
   author_title VARCHAR(255) DEFAULT 'Member',
   content TEXT NOT NULL,
