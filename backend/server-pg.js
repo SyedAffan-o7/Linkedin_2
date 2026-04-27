@@ -28,8 +28,7 @@ const mapPost = (r) => ({
 const mapProfile = (r) => ({
   id: r.id,
   userId: r.user_id,
-  firstName: r.first_name,
-  lastName: r.last_name,
+  name: r.name,
   headline: r.headline,
   bio: r.bio,
   location: r.location,
@@ -48,27 +47,67 @@ const mapProfile = (r) => ({
   updatedAt: r.updated_at,
 });
 
+// Simple auth middleware - expects userId in header
+const requireAuth = async (req, res, next) => {
+  const userId = req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized - Login required' });
+  }
+  
+  // Verify user exists
+  const { rows } = await query('SELECT * FROM profiles WHERE id = $1', [userId]);
+  if (!rows[0]) {
+    return res.status(401).json({ error: 'Invalid user' });
+  }
+  
+  req.user = mapProfile(rows[0]);
+  next();
+};
+
 // =========================================
-// POSTS
+// AUTH
 // =========================================
 
-app.get('/api/posts', async (req, res) => {
+app.post('/api/login', async (req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM posts ORDER BY timestamp DESC');
+    const { name, password } = req.body;
+    if (!name || !password) {
+      return res.status(400).json({ error: 'Name and password required' });
+    }
+    
+    const { rows } = await query('SELECT * FROM profiles WHERE name = $1 AND password = $2', [name, password]);
+    if (!rows[0]) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    res.json({ user: mapProfile(rows[0]) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================================
+// POSTS (User-specific)
+// =========================================
+
+// Get current user's posts only
+app.get('/api/posts', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await query('SELECT * FROM posts WHERE user_id = $1 ORDER BY timestamp DESC', [req.user.id]);
     res.json({ posts: rows.map(mapPost) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/posts', async (req, res) => {
+app.post('/api/posts', requireAuth, async (req, res) => {
   try {
-    const { author, authorTitle, content } = req.body;
+    const { content } = req.body;
     if (!content || !content.trim()) return res.status(400).json({ error: 'Content is required' });
 
     const { rows } = await query(
-      `INSERT INTO posts (author, author_title, content) VALUES ($1, $2, $3) RETURNING *`,
-      [author || 'Anonymous User', authorTitle || 'Member', content.trim()]
+      `INSERT INTO posts (user_id, author, author_title, content) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.user.id, req.user.name, req.user.headline || 'Member', content.trim()]
     );
     res.status(201).json({ post: mapPost(rows[0]) });
   } catch (err) {
@@ -76,7 +115,7 @@ app.post('/api/posts', async (req, res) => {
   }
 });
 
-app.post('/api/posts/with-media', (req, res, next) => {
+app.post('/api/posts/with-media', requireAuth, (req, res, next) => {
   upload.fields([
     { name: 'images', maxCount: 10 },
     { name: 'video', maxCount: 1 }
@@ -89,19 +128,16 @@ app.post('/api/posts/with-media', (req, res, next) => {
   });
 }, async (req, res) => {
   try {
-    const { author, authorTitle, content } = req.body;
+    const { content } = req.body;
     if (!content || !content.trim()) return res.status(400).json({ error: 'Content is required' });
 
-    // Cloudinary returns full URLs in file.path
     const images = req.files?.images ? req.files.images.map(f => f.path) : [];
     const video = req.files?.video ? req.files.video[0].path : null;
 
-    console.log('Creating post with images:', images, 'video:', video);
-
     const { rows } = await query(
-      `INSERT INTO posts (author, author_title, content, images, video)
-       VALUES ($1, $2, $3, $4::jsonb, $5) RETURNING *`,
-      [author || 'Anonymous User', authorTitle || 'Member', content.trim(), JSON.stringify(images), video]
+      `INSERT INTO posts (user_id, author, author_title, content, images, video)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6) RETURNING *`,
+      [req.user.id, req.user.name, req.user.headline || 'Member', content.trim(), JSON.stringify(images), video]
     );
     res.status(201).json({ post: mapPost(rows[0]) });
   } catch (err) {
@@ -110,23 +146,24 @@ app.post('/api/posts/with-media', (req, res, next) => {
   }
 });
 
-app.post('/api/posts/:id/like', async (req, res) => {
+app.post('/api/posts/:id/like', requireAuth, async (req, res) => {
   try {
+    // Only allow liking own posts
     const { rows } = await query(
-      `UPDATE posts SET likes = likes + 1 WHERE id = $1 RETURNING *`,
-      [req.params.id]
+      `UPDATE posts SET likes = likes + 1 WHERE id = $1 AND user_id = $2 RETURNING *`,
+      [req.params.id, req.user.id]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Post not found' });
+    if (!rows[0]) return res.status(404).json({ error: 'Post not found or not yours' });
     res.json({ post: mapPost(rows[0]) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/posts/:id', async (req, res) => {
+app.delete('/api/posts/:id', requireAuth, async (req, res) => {
   try {
-    const { rowCount } = await query('DELETE FROM posts WHERE id = $1', [req.params.id]);
-    if (rowCount === 0) return res.status(404).json({ error: 'Post not found' });
+    const { rowCount } = await query('DELETE FROM posts WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Post not found or not yours' });
     res.json({ message: 'Post deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -134,94 +171,52 @@ app.delete('/api/posts/:id', async (req, res) => {
 });
 
 // =========================================
-// PROFILES
+// PROFILES (User-specific)
 // =========================================
 
-app.get('/api/profiles', async (req, res) => {
+// Get current user's profile
+app.get('/api/profiles/me', requireAuth, async (req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM profiles ORDER BY id');
-    res.json({ profiles: rows.map(mapProfile) });
+    res.json({ profile: req.user });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/profiles/:id', async (req, res) => {
+// Update current user's profile
+app.put('/api/profiles/me', requireAuth, upload.single('profilePicture'), async (req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM profiles WHERE id = $1', [req.params.id]);
-    if (!rows[0]) return res.status(404).json({ error: 'Profile not found' });
-    res.json({ profile: mapProfile(rows[0]) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const p = req.user;
+    const { name, headline, bio, location, industry } = req.body;
 
-app.get('/api/profiles/user/:userId', async (req, res) => {
-  try {
-    const { rows } = await query('SELECT * FROM profiles WHERE user_id = $1', [req.params.userId]);
-    if (!rows[0]) return res.status(404).json({ error: 'Profile not found' });
-    res.json({ profile: mapProfile(rows[0]) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/profiles', upload.single('profilePicture'), async (req, res) => {
-  try {
-    const { userId, firstName, lastName, headline, bio, location, industry, email, phone, website, linkedin, github, twitter } = req.body;
-    if (!firstName || !lastName) return res.status(400).json({ error: 'First name and last name are required' });
-
-    const profilePicture = req.file ? req.file.path : '/uploads/default-avatar.png';
-    const contactInfo = JSON.stringify({ email: email || '', phone: phone || '', website: website || '' });
-    const socialLinks = JSON.stringify({ linkedin: linkedin || '', github: github || '', twitter: twitter || '' });
-
-    const { rows } = await query(
-      `INSERT INTO profiles (user_id, first_name, last_name, headline, bio, location, industry, profile_picture, contact_info, social_links)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb) RETURNING *`,
-      [userId || null, firstName, lastName, headline || '', bio || '', location || '', industry || '', profilePicture, contactInfo, socialLinks]
-    );
-    res.status(201).json({ profile: mapProfile(rows[0]) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/profiles/:id', upload.single('profilePicture'), async (req, res) => {
-  try {
-    const { rows: existing } = await query('SELECT * FROM profiles WHERE id = $1', [req.params.id]);
-    if (!existing[0]) return res.status(404).json({ error: 'Profile not found' });
-
-    const p = mapProfile(existing[0]);
-    const { firstName, lastName, headline, bio, location, industry, email, phone, website, linkedin, github, twitter } = req.body;
-
-    const newContactInfo = {
-      email: email !== undefined ? email : p.contactInfo.email,
-      phone: phone !== undefined ? phone : p.contactInfo.phone,
-      website: website !== undefined ? website : p.contactInfo.website,
-    };
-    const newSocialLinks = {
-      linkedin: linkedin !== undefined ? linkedin : p.socialLinks.linkedin,
-      github: github !== undefined ? github : p.socialLinks.github,
-      twitter: twitter !== undefined ? twitter : p.socialLinks.twitter,
-    };
     const profilePicture = req.file ? req.file.path : p.profilePicture;
 
     const { rows } = await query(
       `UPDATE profiles SET
-        first_name = $1, last_name = $2, headline = $3, bio = $4, location = $5, industry = $6,
-        profile_picture = $7, contact_info = $8::jsonb, social_links = $9::jsonb, updated_at = NOW()
-       WHERE id = $10 RETURNING *`,
+        name = $1, headline = $2, bio = $3, location = $4, industry = $5,
+        profile_picture = $6, updated_at = NOW()
+       WHERE id = $7 RETURNING *`,
       [
-        firstName || p.firstName, lastName || p.lastName,
+        name !== undefined ? name : p.name,
         headline !== undefined ? headline : p.headline,
         bio !== undefined ? bio : p.bio,
         location !== undefined ? location : p.location,
         industry !== undefined ? industry : p.industry,
-        profilePicture, JSON.stringify(newContactInfo), JSON.stringify(newSocialLinks),
-        req.params.id
+        profilePicture,
+        req.user.id
       ]
     );
     res.json({ profile: mapProfile(rows[0]) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Get all profiles (if needed)
+app.get('/api/profiles', requireAuth, async (req, res) => {
+  try {
+    // Only return own profile for now
+    res.json({ profiles: [req.user] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
