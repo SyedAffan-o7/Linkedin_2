@@ -1,13 +1,20 @@
 import { useState, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom'
 import './App.css'
 import Feed from './components/Feed'
 import Profile from './components/Profile'
 import Login from './components/Login'
+import PostDetail from './components/PostDetail'
 
-function App() {
-  const [currentView, setCurrentView] = useState('feed')
-  const [selectedProfileId, setSelectedProfileId] = useState(null)
+// Wrapper component for post detail that passes user prop
+function PostDetailWrapper({ user }) {
+  const { id } = useParams()
+  return <PostDetail postId={id} user={user} />
+}
+
+function AppContent() {
   const [user, setUser] = useState(null)
+  const navigate = useNavigate()
 
   // Check for stored user on mount
   useEffect(() => {
@@ -19,24 +26,14 @@ function App() {
 
   const handleLogin = (userData) => {
     setUser(userData);
-    setCurrentView('feed');
+    navigate('/');
   };
 
   const handleLogout = () => {
     localStorage.removeItem('user');
     setUser(null);
-    setCurrentView('feed');
+    navigate('/');
   };
-
-  const navigateToProfile = (profileId = 1) => {
-    setSelectedProfileId(profileId)
-    setCurrentView('profile')
-  }
-
-  const navigateToFeed = () => {
-    setCurrentView('feed')
-    setSelectedProfileId(null)
-  }
 
   // Show login if no user
   if (!user) {
@@ -44,21 +41,19 @@ function App() {
   }
 
   return (
-    <>
-      {currentView === 'feed' ? (
-        <Feed 
-          onViewProfile={navigateToProfile} 
-          user={user}
-          onLogout={handleLogout}
-        />
-      ) : (
-        <Profile 
-          profileId={selectedProfileId} 
-          onBack={navigateToFeed}
-          user={user}
-        />
-      )}
-    </>
+    <Routes>
+      <Route path="/" element={<Feed user={user} onLogout={handleLogout} />} />
+      <Route path="/post/:id" element={<PostDetailWrapper user={user} />} />
+      <Route path="*" element={<Navigate to="/" />} />
+    </Routes>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   )
 }
 

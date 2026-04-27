@@ -12,33 +12,33 @@ async function init() {
   try {
     console.log('🔌 Connecting to PostgreSQL...');
     
+    // Drop existing tables to recreate with new schema
+    console.log('🗑️  Dropping old tables...');
+    await query('DROP TABLE IF EXISTS posts');
+    await query('DROP TABLE IF EXISTS profiles');
+    
     // Run schema
     const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
     await query(schema);
     console.log('✅ Schema created');
 
-    // Check if seed data exists
-    const { rows } = await query('SELECT COUNT(*) FROM profiles');
-    if (parseInt(rows[0].count) === 0) {
-      console.log('🌱 Seeding user: Zubair...');
-      
-      await query(`
-        INSERT INTO profiles (
-          user_id, name, password, headline, bio, location, industry,
-          profile_picture, cover_photo, contact_info, social_links, experience, education, skills,
-          connections, followers, following
-        ) VALUES (
-          1, 'Zubair', 'Zubair321', '', '', '', '',
-          '/uploads/default-avatar.png', '/uploads/default-cover.png',
-          '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
-          0, 0, 0
-        )
-      `);
-      
-      console.log('✅ User Zubair created (password: Zubair321)');
-    } else {
-      console.log('ℹ️  Database already has data, skipping seed');
-    }
+    // Seed data
+    console.log('🌱 Seeding user: Zubair...');
+    
+    await query(`
+      INSERT INTO profiles (
+        user_id, name, password, headline, bio, location, industry,
+        profile_picture, cover_photo, contact_info, social_links, experience, education, skills,
+        connections, followers, following
+      ) VALUES (
+        1, 'Zubair', 'Zubair321', '', '', '', '',
+        '/uploads/default-avatar.png', '/uploads/default-cover.png',
+        '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+        0, 0, 0
+      )
+    `);
+    
+    console.log('✅ User Zubair created (password: Zubair321)');
 
     console.log('🎉 Database ready!');
   } catch (err) {

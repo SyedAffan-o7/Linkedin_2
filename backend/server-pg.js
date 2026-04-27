@@ -146,6 +146,16 @@ app.post('/api/posts/with-media', requireAuth, (req, res, next) => {
   }
 });
 
+app.get('/api/posts/:id', async (req, res) => {
+  try {
+    const { rows } = await query('SELECT * FROM posts WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Post not found' });
+    res.json({ post: mapPost(rows[0]) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/posts/:id/like', requireAuth, async (req, res) => {
   try {
     // Only allow liking own posts
