@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Bookmark, Users, Newspaper, Calendar, Video, Image as ImageIcon, FileText, Pencil, 
   Info, X, Trash2, ThumbsUp, MessageCircle, Share2, BarChart3, Puzzle, Zap, 
-  Grid3X3, Music, ChevronDown, ChevronRight, Camera, Flame
+  Grid3X3, Music, ChevronDown, ChevronRight, Camera, Flame, LogOut
 } from 'lucide-react';
 import Navbar from './Navbar';
 
@@ -12,6 +12,15 @@ const API_URL = 'http://localhost:5000/api';
 const getMediaUrl = (path) => {
   if (!path) return null;
   return path.startsWith('http') ? path : `http://localhost:5000${path}`;
+};
+
+// Helper to get auth headers
+const getAuthHeaders = () => {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  return {
+    'Content-Type': 'application/json',
+    'x-user-id': user.id || ''
+  };
 };
 
 // Image Carousel Component
@@ -81,7 +90,7 @@ function ImageCarousel({ images, postId }) {
   );
 }
 
-function Feed({ onViewProfile }) {
+function Feed({ onViewProfile, user, onLogout }) {
   const [posts, setPosts] = useState([]);
   const [newPostContent, setNewPostContent] = useState('');
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -90,13 +99,12 @@ function Feed({ onViewProfile }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({
-    firstName: 'Demo',
-    lastName: 'User',
-    headline: 'Full Stack Developer',
-    bio: '',
-    location: '',
-    industry: '',
-    profilePicture: null
+    name: user?.name || '',
+    headline: user?.headline || '',
+    bio: user?.bio || '',
+    location: user?.location || '',
+    industry: user?.industry || '',
+    profilePicture: user?.profilePicture || null
   });
   const [selectedProfilePic, setSelectedProfilePic] = useState(null);
   const [profilePicPreview, setProfilePicPreview] = useState(null);
@@ -107,12 +115,6 @@ function Feed({ onViewProfile }) {
   const filterDropdownRef = useRef(null);
   const profilePicInputRef = useRef(null);
   const postFileInputRef = useRef(null);
-
-  // Fetch posts and profile on component mount
-  useEffect(() => {
-    fetchPosts();
-    fetchProfile();
-  }, []);
 
   // Close filter dropdown when clicking outside
   useEffect(() => {
@@ -125,15 +127,22 @@ function Feed({ onViewProfile }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Fetch posts and profile on component mount
+  useEffect(() => {
+    fetchPosts();
+    fetchProfile();
+  }, []);
+
   const fetchProfile = async () => {
     try {
-      const response = await fetch(`${API_URL}/profiles/1`);
+      const response = await fetch(`${API_URL}/profiles/me`, {
+        headers: { 'x-user-id': user?.id || '' }
+      });
       const data = await response.json();
       if (data.profile) {
         setEditForm({
-          firstName: data.profile.firstName || 'Demo',
-          lastName: data.profile.lastName || 'User',
-          headline: data.profile.headline || 'Full Stack Developer',
+          name: data.profile.name || '',
+          headline: data.profile.headline || '',
           bio: data.profile.bio || '',
           location: data.profile.location || '',
           industry: data.profile.industry || '',
@@ -147,12 +156,14 @@ function Feed({ onViewProfile }) {
 
   const fetchPosts = async () => {
     try {
-      const response = await fetch(`${API_URL}/posts`);
+      const response = await fetch(`${API_URL}/posts`, {
+        headers: { 'x-user-id': user?.id || '' }
+      });
       const data = await response.json();
-      setPosts(data.posts);
+      setPosts(data.posts || []);
+      setIsLoading(false);
     } catch (error) {
       console.error('Error fetching posts:', error);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -179,14 +190,9 @@ function Feed({ onViewProfile }) {
     e.preventDefault();
     if (!newPostContent.trim()) return;
 
-    const authorName = `${editForm.firstName} ${editForm.lastName}`;
-    const authorTitle = editForm.headline || 'Member';
-
     setIsSubmitting(true);
     try {
       const formData = new FormData();
-      formData.append('author', authorName);
-      formData.append('authorTitle', authorTitle);
       formData.append('content', newPostContent);
 
       selectedFiles.forEach(file => {
@@ -198,16 +204,20 @@ function Feed({ onViewProfile }) {
       });
 
       const endpoint = selectedFiles.length > 0 ? `${API_URL}/posts/with-media` : `${API_URL}/posts`;
+      
       const options = selectedFiles.length > 0 
-        ? { method: 'POST', body: formData }
+        ? { 
+            method: 'POST', 
+            body: formData,
+            headers: { 'x-user-id': user?.id || '' }
+          }
         : { 
             method: 'POST', 
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              author: authorName,
-              authorTitle: authorTitle,
-              content: newPostContent,
-            })
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': user?.id || ''
+            },
+            body: JSON.stringify({ content: newPostContent })
           };
 
       const response = await fetch(endpoint, options);
@@ -232,6 +242,7 @@ function Feed({ onViewProfile }) {
     try {
       const response = await fetch(`${API_URL}/posts/${postId}/like`, {
         method: 'POST',
+        headers: { 'x-user-id': user?.id || '' }
       });
 
       if (response.ok) {
@@ -251,12 +262,13 @@ function Feed({ onViewProfile }) {
     try {
       const response = await fetch(`${API_URL}/posts/${postId}`, {
         method: 'DELETE',
+        headers: { 'x-user-id': user?.id || '' }
       });
 
       if (response.ok) {
         setPosts(posts.filter(post => post.id !== postId));
       } else {
-        alert('Failed to delete post');
+        alert('Failed to delete post - not yours or not found');
       }
     } catch (error) {
       console.error('Error deleting post:', error);
@@ -326,25 +338,27 @@ function Feed({ onViewProfile }) {
       if (selectedProfilePic) {
         const formData = new FormData();
         formData.append('profilePicture', selectedProfilePic);
-        formData.append('firstName', editForm.firstName);
-        formData.append('lastName', editForm.lastName);
+        formData.append('name', editForm.name);
         formData.append('headline', editForm.headline);
         formData.append('bio', editForm.bio);
         formData.append('location', editForm.location);
         formData.append('industry', editForm.industry);
         
-        response = await fetch(`${API_URL}/profiles/1`, {
+        response = await fetch(`${API_URL}/profiles/me`, {
           method: 'PUT',
-          body: formData
+          body: formData,
+          headers: { 'x-user-id': user?.id || '' }
         });
       } else {
         // No picture - use JSON
-        response = await fetch(`${API_URL}/profiles/1/update`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        response = await fetch(`${API_URL}/profiles/me`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-user-id': user?.id || ''
+          },
           body: JSON.stringify({
-            firstName: editForm.firstName,
-            lastName: editForm.lastName,
+            name: editForm.name,
             headline: editForm.headline,
             bio: editForm.bio,
             location: editForm.location,
@@ -355,11 +369,9 @@ function Feed({ onViewProfile }) {
 
       if (response.ok) {
         const data = await response.json();
-        // Update local state with new profile data
         if (data.profile) {
           setEditForm({
-            firstName: data.profile.firstName || editForm.firstName,
-            lastName: data.profile.lastName || editForm.lastName,
+            name: data.profile.name || editForm.name,
             headline: data.profile.headline || editForm.headline,
             bio: data.profile.bio || editForm.bio,
             location: data.profile.location || editForm.location,
@@ -406,7 +418,7 @@ function Feed({ onViewProfile }) {
                     className="text-center font-semibold text-gray-900 cursor-pointer hover:underline"
                     onClick={() => onViewProfile?.(1)}
                   >
-                    {editForm.firstName} {editForm.lastName}
+                    {editForm.name}
                   </h3>
                   <button 
                     onClick={() => setShowEditModal(true)}
@@ -434,6 +446,16 @@ function Feed({ onViewProfile }) {
                 <div className="mt-3 pt-3 border-t">
                   <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700">
                     <BarChart3 className="w-4 h-4" /> View all analytics
+                  </button>
+                </div>
+                
+                {/* Logout */}
+                <div className="mt-3 pt-3 border-t">
+                  <button 
+                    onClick={onLogout}
+                    className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700"
+                  >
+                    <LogOut className="w-4 h-4" /> Logout
                   </button>
                 </div>
               </div>
@@ -896,27 +918,15 @@ function Feed({ onViewProfile }) {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                    <input
-                      type="text"
-                      value={editForm.firstName}
-                      onChange={(e) => setEditForm({...editForm, firstName: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                    <input
-                      type="text"
-                      value={editForm.lastName}
-                      onChange={(e) => setEditForm({...editForm, lastName: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({...editForm, name: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                    required
+                  />
                 </div>
 
                 <div>
@@ -1017,7 +1027,7 @@ function Feed({ onViewProfile }) {
                       onError={(e) => { e.target.src = '/default-avatar.png'; }}
                     />
                     <div>
-                      <h4 className="font-semibold text-gray-900">{editForm.firstName} {editForm.lastName}</h4>
+                      <h4 className="font-semibold text-gray-900">{editForm.name}</h4>
                       <p className="text-sm text-gray-500">{editForm.headline || 'Post to Anyone'}</p>
                     </div>
                   </div>
@@ -1118,7 +1128,7 @@ function Feed({ onViewProfile }) {
                         onError={(e) => { e.target.src = '/default-avatar.png'; }}
                       />
                       <div>
-                        <h4 className="font-semibold text-gray-900">{editForm.firstName} {editForm.lastName}</h4>
+                        <h4 className="font-semibold text-gray-900">{editForm.name}</h4>
                         <p className="text-sm text-gray-500">{editForm.headline || 'Post to Anyone'}</p>
                       </div>
                     </div>
