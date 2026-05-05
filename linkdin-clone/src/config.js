@@ -1,11 +1,10 @@
 // API Configuration
-// In production, this should be your deployed backend URL
-// For Render.com: https://linkedin-clone-backend.onrender.com/api
+// Backend deployed on Render.com
 
 const isProduction = import.meta.env.PROD;
 
 export const API_BASE_URL = isProduction 
-  ? 'https://linkedin-clone-backend.onrender.com'  // Update this after deploying to Render
+  ? 'https://linkedin-clone-backend-9472.onrender.com'  // Your deployed Render URL
   : 'http://localhost:5000';
 
 export const API_URL = `${API_BASE_URL}/api`;
