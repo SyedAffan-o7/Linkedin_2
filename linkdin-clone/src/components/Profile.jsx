@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Navbar from './Navbar';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_URL, getMediaUrl } from '../config';
 
 function Profile({ profileId = 1, onBack }) {
   const [profile, setProfile] = useState(null);
@@ -227,10 +226,7 @@ function Profile({ profileId = 1, onBack }) {
     return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   };
 
-  const getImageUrl = (path) => {
-    if (!path) return '/default-avatar.png';
-    return path.startsWith('http') ? path : `http://localhost:5000${path}`;
-  };
+  const getImageUrl = getMediaUrl;
 
   if (isLoading) {
     return (
@@ -499,7 +495,7 @@ function Profile({ profileId = 1, onBack }) {
                                 {post.images.map((img, idx) => (
                                   <img 
                                     key={idx} 
-                                    src={img.startsWith('http') ? img : `http://localhost:5000${img}`}
+                                    src={getMediaUrl(img)}
                                     alt="" 
                                     className="w-full h-48 object-cover rounded"
                                   />
@@ -508,7 +504,7 @@ function Profile({ profileId = 1, onBack }) {
                             )}
                             {post.video && (
                               <video 
-                                src={`http://localhost:5000${post.video}`}
+                                src={getMediaUrl(post.video)}
                                 controls 
                                 className="w-full max-h-64 rounded"
                               />

@@ -1,19 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   Bookmark, Users, Newspaper, Calendar, Video, Image as ImageIcon, FileText, Pencil, 
   Info, X, Trash2, ThumbsUp, MessageCircle, Share2, BarChart3, Puzzle, Zap, 
   Grid3X3, Music, ChevronDown, ChevronRight, Camera, Flame, LogOut, Link as LinkIcon, Check
 } from 'lucide-react';
 import Navbar from './Navbar';
-
-const API_URL = 'http://localhost:5000/api';
-
-// Helper: Returns full URL for media, supporting both Cloudinary (absolute) and local paths
-const getMediaUrl = (path) => {
-  if (!path) return null;
-  return path.startsWith('http') ? path : `http://localhost:5000${path}`;
-};
+import { API_URL, API_BASE_URL, getMediaUrl } from '../config';
 
 // Helper to get auth headers
 const getAuthHeaders = () => {

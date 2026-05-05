@@ -5,13 +5,7 @@ import {
   Send, Bookmark, X, Trash2, Link as LinkIcon, Check
 } from 'lucide-react';
 import Navbar from './Navbar';
-
-const API_URL = 'http://localhost:5000/api';
-
-const getMediaUrl = (path) => {
-  if (!path) return null;
-  return path.startsWith('http') ? path : `http://localhost:5000${path}`;
-};
+import { API_URL, getMediaUrl } from '../config';
 
 // Image Carousel Component (reused from Feed)
 function ImageCarousel({ images }) {
